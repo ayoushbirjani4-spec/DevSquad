@@ -48,3 +48,5 @@ and `${CLAUDE_SKILL_DIR}/protocols/quality-gates.md` before judging any gate.
    `run.json` as `baseline_dirty`) unless the user agrees.
 6. If the bug text is empty or too vague to act on, ask the user before `DS init`.
 7. Report honestly: a FAIL or WARN gate is reported as exactly that.
+8. However the run finishes (delivered, stopped early, or cancelled), run
+   `DS end` as your last command.

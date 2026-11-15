@@ -8,6 +8,7 @@ Decision output follows the hooks spec: hookSpecificOutput.permissionDecision.
 No output + exit 0 means "no opinion". ds-* agents fail closed (exit 2) if the
 guard itself crashes.
 """
+import fnmatch
 import json
 import os
 import re
@@ -134,6 +135,26 @@ def bash_write_targets(cmd, cwd):
     return out
 
 
+SECRET_SAMPLES = (".env", ".env.local", ".env.production", "id_rsa", "id_ed25519", "server.pem",
+                  "server.key", "cert.p12", "cert.pfx")
+
+
+def grep_targets_secret(inp):
+    """True if a Grep call points at a secret file or its glob/type can match one."""
+    path = inp.get("path") or ""
+    if path and c.is_secret_path(path):
+        return True
+    pats = [p for p in (inp.get("glob") or "").split() if p]
+    while any("{" in p for p in pats):  # expand braces: *.{py,key} -> *.py, *.key
+        out = []
+        for p in pats:
+            m = re.search(r"\{([^{}]*)\}", p)
+            out += [p[:m.start()] + alt + p[m.end():] for alt in m.group(1).split(",")] if m \
+                else [p.replace("{", "")]
+        pats = out
+    return any(fnmatch.fnmatch(s, p.split("/")[-1].lower()) for p in pats for s in SECRET_SAMPLES)
+
+
 def check_bash(ctx, cmd):
     if ctx.role in ROLES:
         if DESTRUCTIVE_GIT.search(cmd):
@@ -175,7 +196,8 @@ def main():
     tool = data.get("tool_name", "")
     inp = data.get("tool_input") or {}
     _CALL.update(agent=_ROLE or "main", tool=tool,
-                 target=str(inp.get("command") or inp.get("file_path") or inp.get("notebook_path") or "")[:200])
+                 target=str(inp.get("command") or inp.get("file_path") or inp.get("notebook_path")
+                            or inp.get("path") or inp.get("glob") or "")[:200])
     # Installed as a global settings hook: stay silent in ordinary sessions.
     if _ROLE not in ROLES and not ctx.run_id:
         log("none", "no active DevSquad run")
@@ -191,6 +213,9 @@ def main():
         path = inp.get("file_path", "")
         if path and c.is_secret_path(path):
             decide("deny" if ctx.role in ROLES else "ask", "reading a secrets file")
+    elif tool == "Grep":
+        if grep_targets_secret(inp):
+            decide("deny" if ctx.role in ROLES else "ask", "searching inside secrets files")
     log("none")
     sys.exit(0)
 

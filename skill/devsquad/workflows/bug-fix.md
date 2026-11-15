@@ -74,3 +74,8 @@ report the gate as FAIL.
    review findings, anything unresolved. Quote the gate result exactly.
 4. Ask whether to commit. Only on a clear yes: stage the changed files by name
    (never `git add -A`, never `.devsquad/`) and commit. Never push.
+5. `DS end` closes the run. Do this last, whether or not the user committed.
+
+Whenever you stop early (not reproduced, invalid reports, user cancels), also
+run `DS end` before you finish. Until then the guard treats the repo as being
+in a run.

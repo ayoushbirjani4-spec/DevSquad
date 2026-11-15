@@ -3,6 +3,7 @@
   python install.py                 user install  (~/.claude, all projects)
   python install.py --project PATH  project install (PATH/.claude)
   add --force to overwrite an existing install
+  add --uninstall to remove it again (same --project, if you used one)
 
 Copies skill/devsquad -> <dest>/skills/devsquad and agents/*.md -> <dest>/agents,
 filling in absolute paths for the Python interpreter and hook scripts.
@@ -20,7 +21,34 @@ def fwd(p):
     return os.path.abspath(p).replace("\\", "/")
 
 
-MATCHER = "Bash|Edit|Write|MultiEdit|NotebookEdit|Read"
+MATCHER = "Bash|Edit|Write|MultiEdit|NotebookEdit|Read|Grep"
+
+
+def load_settings(path):
+    """(data, raw) from settings.json; backs it up before any change."""
+    if not os.path.exists(path):
+        return {}, None
+    with open(path, encoding="utf-8") as f:
+        raw = f.read()
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        sys.exit(f"{path} is not valid JSON; fix it and re-run (nothing was changed there).")
+    with open(path + ".devsquad-bak", "w", encoding="utf-8") as f:
+        f.write(raw)
+    return data, raw
+
+
+def save_settings(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+def is_guard_entry(e):
+    return any("devsquad" in str(h.get("args", "")) + str(h.get("command", ""))
+               and "guard.py" in str(h.get("args", "")) + str(h.get("command", ""))
+               for h in e.get("hooks", []))
 
 
 def install_hook(dest, python, guard):
@@ -28,39 +56,63 @@ def install_hook(dest, python, guard):
     subagents, unlike agent-frontmatter hooks in an untrusted workspace.
     Replaces any earlier DevSquad entry; keeps everything else untouched."""
     path = os.path.join(dest, "settings.json")
-    data = {}
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            raw = f.read()
-        try:
-            data = json.loads(raw) if raw.strip() else {}
-        except ValueError:
-            sys.exit(f"{path} is not valid JSON; fix it and re-run (nothing was changed there).")
-        with open(path + ".devsquad-bak", "w", encoding="utf-8") as f:
-            f.write(raw)
+    data, _ = load_settings(path)
     entries = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    entries[:] = [e for e in entries
-                  if not any("devsquad" in str(h.get("args", "")) + str(h.get("command", ""))
-                             and "guard.py" in str(h.get("args", "")) + str(h.get("command", ""))
-                             for h in e.get("hooks", []))]
+    entries[:] = [e for e in entries if not is_guard_entry(e)]
     entries.append({"matcher": MATCHER,
                     "hooks": [{"type": "command", "command": python, "args": [guard]}]})
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
+    save_settings(path, data)
     return path
+
+
+def uninstall(dest, skill_dst, agent_dst, agents):
+    """Remove the guard hook, the skill and DevSquad's own agent files."""
+    removed = []
+    path = os.path.join(dest, "settings.json")
+    data, raw = load_settings(path)
+    hooks = data.get("hooks", {})
+    entries = hooks.get("PreToolUse", [])
+    kept = [e for e in entries if not is_guard_entry(e)]
+    if len(kept) != len(entries):
+        if kept:
+            hooks["PreToolUse"] = kept
+        else:
+            hooks.pop("PreToolUse", None)
+            if not hooks:
+                data.pop("hooks", None)
+        save_settings(path, data)
+        removed.append(f"guard hook in {path}")
+    elif raw is not None:
+        os.remove(path + ".devsquad-bak")  # nothing changed, no backup needed
+    if os.path.exists(skill_dst):
+        shutil.rmtree(skill_dst)
+        removed.append(skill_dst)
+    for f in agents:
+        p = os.path.join(agent_dst, f)
+        if os.path.exists(p):
+            os.remove(p)
+            removed.append(p)
+    if removed:
+        print("Removed DevSquad:\n  " + "\n  ".join(removed))
+    else:
+        print(f"DevSquad is not installed in {dest}")
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--project", help="repository to install into instead of ~/.claude")
     ap.add_argument("--force", action="store_true", help="overwrite an existing install")
+    ap.add_argument("--uninstall", action="store_true", help="remove the skill, agents and guard hook")
     a = ap.parse_args()
 
     dest = os.path.join(a.project, ".claude") if a.project else os.path.join(os.path.expanduser("~"), ".claude")
     skill_dst = os.path.join(dest, "skills", "devsquad")
     agent_dst = os.path.join(dest, "agents")
     agents = sorted(f for f in os.listdir(os.path.join(HERE, "agents")) if f.endswith(".md"))
+
+    if a.uninstall:
+        uninstall(dest, skill_dst, agent_dst, agents)
+        return
 
     existing = [p for p in [skill_dst] + [os.path.join(agent_dst, f) for f in agents] if os.path.exists(p)]
     if existing and not a.force:
