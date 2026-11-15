@@ -6,6 +6,7 @@
   ds.py diff                     write diff.patch for the reviewer
   ds.py validate REPORT.json     check a specialist report
   ds.py gate                     final gate, writes final_report.md
+  ds.py end                      close the active run (keeps its files)
 """
 import argparse
 import datetime as dt
@@ -164,6 +165,8 @@ def cmd_init(a):
         i += 1
     dirty = sorted(p for p in dirty if not c.is_artifact(p))
 
+    if run.id:
+        print(f"note: run {run.id} was still active; it is replaced by the new run")
     head = run.head()
     meta = {
         "run_id": run_id, "created": now(), "bug": a.bug,
@@ -466,6 +469,16 @@ def cmd_gate(_a):
     sys.exit({"PASS": 0, "WARN": 3, "FAIL": 1}[overall])
 
 
+def cmd_end(_a):
+    """Close the active run so the guard goes quiet again. The run folder stays."""
+    run = Run(need_run=False)
+    if not run.id:
+        print("no active run")
+        return
+    os.remove(os.path.join(run.root, c.STATE_DIR, "current"))
+    print(f"ended run {run.id} (files kept in {run.dir})")
+
+
 def main():
     ap = argparse.ArgumentParser(prog="ds.py", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -481,6 +494,7 @@ def main():
     p = sub.add_parser("diff"); p.set_defaults(fn=cmd_diff)
     p = sub.add_parser("validate"); p.add_argument("report"); p.set_defaults(fn=cmd_validate)
     p = sub.add_parser("gate"); p.set_defaults(fn=cmd_gate)
+    p = sub.add_parser("end"); p.set_defaults(fn=cmd_end)
     a = ap.parse_args()
     a.fn(a)
 

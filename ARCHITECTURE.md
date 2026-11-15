@@ -50,7 +50,7 @@ User ──/devsquad <bug>──▶ Orchestrator (main session, runs SKILL.md)
 | Protocols | `skill/devsquad/protocols/*.md` | Report schema, evidence rules, quality gates. |
 | Agents | `agents/ds-*.md` | Specialist prompts, `tools:` allowlists, models, guard hook. |
 | Guard | `skill/devsquad/scripts/guard.py` | PreToolUse hook. Reads `agent_type`, allows/denies file and shell access per role. |
-| CLI | `skill/devsquad/scripts/ds.py` | `init`, `check`, `diff`, `validate`, `gate`. Stdlib Python only. |
+| CLI | `skill/devsquad/scripts/ds.py` | `init`, `check`, `diff`, `validate`, `gate`, `end`. Stdlib Python only. |
 | Installer | `install.py` | Copies skill + agents into `~/.claude` (user) or a repo's `.claude` (project), fills in absolute paths, and registers the guard in that scope's `settings.json`. |
 
 The orchestrator is the **main session**, not a forked subagent, because it
@@ -73,7 +73,10 @@ Rules for every `ds-*` agent, enforced by `guard.py`:
 - No writes outside the repo, or to `.git/`, `.claude/`, `.devsquad/` (except
   its own reports folder). The evidence folder is written only by `ds.py`.
 - No reading secrets: `.env`, `.env.*` (except `.env.example`), `*.pem`,
-  `*.key`, `id_rsa*`.
+  `*.key`, `id_rsa*`. This covers `Read`, `Grep` pointed at such a file or
+  with a glob that can match one, and file names in shell commands. A `Grep`
+  over a whole directory is allowed (ripgrep skips gitignored files, where
+  `.env` usually is).
 - Shell: denies `git push/commit/reset --hard/clean/checkout --/restore/stash/
   rebase/merge`, `rm -r`, package installs, `curl|sh` pipes, and shell
   writes to paths the agent may not edit.
@@ -183,7 +186,9 @@ fix touches one of them, the gate flags it for the user instead of passing.
   replaces it on reinstall.
 - Because it's a settings hook it sees every session, so it stays silent
   unless the caller is a `ds-*` agent or the repo has an active run
-  (`.devsquad/current`).
+  (`.devsquad/current`). `ds.py end` removes that marker; the orchestrator
+  runs it as its last command however the run finishes. `install.py
+  --uninstall` takes the hook entry back out.
 - `DEVSQUAD_GUARD_LOG=<file>` logs every guard decision, for debugging.
 
 ## 9. Roadmap

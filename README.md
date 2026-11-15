@@ -18,6 +18,13 @@ The installer also adds one PreToolUse hook (the guard) to that scope's
 `settings.json`, keeping a `.devsquad-bak` backup. The guard does nothing
 outside DevSquad runs.
 
+To remove everything again (skill, agents and the hook entry; your other
+settings are kept), run the same command with `--uninstall`:
+
+```bash
+python install.py --uninstall
+```
+
 Then open a new Claude Code session in the repo and run:
 
 ```
@@ -34,6 +41,7 @@ Then open a new Claude Code session in the repo and run:
 5. Failed checks go back to the fixer, up to 3 attempts.
 6. `ds.py gate` writes `.devsquad/runs/<id>/final_report.md` (PASS / WARN / FAIL)
    and you decide whether to commit. Nothing is ever pushed.
+7. `ds.py end` closes the run, so the guard goes quiet in that repo again.
 
 ## Layout
 
